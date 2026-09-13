@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "role": "hub",
+  "id": "replace-with-a-unique-hub-id",
+  "publicUrl": "https://codex-bot.example.com",
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "telegram": {
+    "userId": 123456789,
+    "chatId": 123456789,
+    "botId": 987654321,
+    "initialOffset": 0
+  },
+  "offlineAfterMs": 60000,
+  "notifications": {
+    "maxTextLength": 3200
+  },
+  "artifacts": {
+    "maxFileBytes": 20971520,
+    "maxFiles": 5
+  }
+}

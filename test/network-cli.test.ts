@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { hubDefaults, saveNetworkConfig } from '../src/network/config.ts';
+import { HubStore } from '../src/network/store.ts';
+
+const execute = promisify(execFile);
+test('команды узла выдают и отзывают подключение, показывают состояние без секретов и сохраняют данные', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-telegram-cli-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const config = hubDefaults(); config.telegram = { userId: 42, chatId: 42, botId: 123, initialOffset: 0 };
+  const token = '123:example_token_for_automated_test_only';
+  await saveNetworkConfig(directory, config, token);
+  const entry = fileURLToPath(new URL('../bin/codex-telegram.mjs', import.meta.url));
+  const command = async (...args: string[]) => (await execute(process.execPath, [entry, ...args, '--home', directory])).stdout;
+  const pairing = await command('pair', '--name', 'Ноутбук');
+  const code = pairing.match(/код \(5 минут\): ([a-f0-9]{64})/)![1]!;
+  const store = new HubStore(join(directory, 'state.sqlite'));
+  const host = store.pair(code, 'a'.repeat(64)); store.close();
+  assert.ok((await command('hosts')).includes('Ноутбук'));
+  const status = await command('status'); assert.ok(status.includes(host.id)); assert.ok(!status.includes('a'.repeat(64)));
+  const saved = await command('config'); assert.ok(saved.includes('"role": "hub"')); assert.ok(!saved.includes(token));
+  await command('revoke', '--host', host.id);
+  assert.equal(JSON.parse(await command('hosts'))[0].revoked, true);
+  const before = await readFile(join(directory, 'config.json'), 'utf8');
+  await assert.rejects(command('setup', '--role', 'agent'));
+  assert.equal(await readFile(join(directory, 'config.json'), 'utf8'), before);
+});

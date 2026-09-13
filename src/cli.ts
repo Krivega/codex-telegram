@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { access, mkdir, stat } from 'node:fs/promises';
+import { access, mkdir, stat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { configDirectory, loadConfig } from './config/config.ts';
@@ -11,6 +11,10 @@ import { Store } from './storage/store.ts';
 import { acquireLock } from './storage/lock.ts';
 import { Bridge } from './bridge/bridge.ts';
 import { setup } from './setup/wizard.ts';
+import { setupNetwork } from './network/setup.ts';
+import { loadNetworkConfig } from './network/config.ts';
+import { startNetwork, doctorNetwork } from './network/runtime.ts';
+import { HubStore } from './network/store.ts';
 import { installService, uninstallService } from './setup/service.ts';
 
 function codexConnection(config: Config): CodexAdapter {
@@ -115,15 +119,47 @@ export async function start(directory: string): Promise<void> {
 }
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    home: { type: 'string' }, help: { type: 'boolean', short: 'h' }, delivery: { type: 'string' }, 'confirm-duplicate-risk': { type: 'boolean' },
+    home: { type: 'string' }, role: { type: 'string' }, name: { type: 'string' }, host: { type: 'string' }, help: { type: 'boolean', short: 'h' }, delivery: { type: 'string' }, 'confirm-duplicate-risk': { type: 'boolean' },
   } });
   const directory = parsed.values.home ? resolve(parsed.values.home) : configDirectory();
   const command = parsed.positionals[0] ?? 'help';
   if (parsed.values.help || command === 'help') {
-    console.log('Codex Telegram\n\nsetup — пошаговая настройка\ndoctor — проверка соединений без отправки сообщений\nstart — запуск службы\nstatus — очередь и неопределённые доставки\nfeedback — сохранённые замечания\nconfig — показать настройки без секретов\nservice install | uninstall — автоматический запуск на macOS\nretry --delivery ID --confirm-duplicate-risk — повторить доставку после проверки Telegram\n\n--home PATH или CODEX_TELEGRAM_HOME — отдельный каталог настроек.');
+    console.log('Codex Telegram\n\nsetup [--role hub|agent|local] — пошаговая настройка\ndoctor — проверка соединений без отправки сообщений\nstart — запуск службы\npair --name НАЗВАНИЕ — выдать код подключения на едином узле\nhosts — подключённые компьютеры\nrevoke --host ID — отозвать ключ компьютера\nstatus — очередь и неопределённые доставки\nfeedback — сохранённые замечания\nconfig — показать настройки без секретов\nservice install | uninstall — автоматический запуск на macOS\nretry --delivery ID --confirm-duplicate-risk — повторить доставку после проверки Telegram\n\n--home PATH или CODEX_TELEGRAM_HOME — отдельный каталог настроек.');
     return;
   }
-  if (command === 'setup') return setup(directory);
+  const version = await readFile(join(directory, 'config.json'), 'utf8').then((raw) => JSON.parse(raw).version as number, (error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  });
+  if (command === 'setup') {
+    if (parsed.values.role === 'local' || (version === 1 && !parsed.values.role)) return setup(directory);
+    return setupNetwork(directory, parsed.values.role);
+  }
+  if (version === 2) {
+    if (command === 'start') return startNetwork(directory);
+    if (command === 'doctor') return doctorNetwork(directory);
+    if (command === 'config') { console.log(JSON.stringify((await loadNetworkConfig(directory)).config, null, 2)); return; }
+    if (command === 'service' && parsed.positionals[1] === 'install') {
+      await doctorNetwork(directory);
+      const { config } = await loadNetworkConfig(directory);
+      return installService(directory, config.role === 'hub' ? process.execPath : config.codex.executable);
+    }
+    if (['pair', 'hosts', 'revoke'].includes(command)) {
+      const { config } = await loadNetworkConfig(directory);
+      if (config.role !== 'hub') throw new Error('Эту команду нужно выполнять на едином узле.');
+      const store = new HubStore(join(directory, 'state.sqlite'));
+      try {
+        store.bindIdentity(JSON.stringify(['hub', config.id, config.telegram.botId, config.telegram.userId, config.telegram.chatId]));
+        if (command === 'hosts') console.log(JSON.stringify(store.hosts().map(({ tasks: _tasks, ...host }) => host), null, 2));
+        else if (command === 'revoke') { store.revoke(parsed.values.host ?? ''); console.log('Ключ отозван. Новые поручения и результаты этого подключения не принимаются. Уже полученные компьютером поручения могут выполняться. Для их остановки остановите локальную службу.'); }
+        else {
+          const pairing = store.issuePairing(parsed.values.name ?? '');
+          console.log(`На подключаемом компьютере выполните setup --role agent.\nАдрес узла: ${config.publicUrl}\nОдноразовый код (5 минут): ${pairing.code}\nИдентификатор: ${pairing.hostId}\nНе публикуйте код. Для каждого компьютера выдавайте новый.`);
+        }
+      } finally { store.close(); }
+      return;
+    }
+  }
   if (command === 'doctor') return doctor(directory);
   if (command === 'start') return start(directory);
   if (command === 'config') { console.log(JSON.stringify((await loadConfig(directory)).config, null, 2)); return; }
@@ -137,7 +173,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (['status', 'feedback', 'retry'].includes(command)) {
     await access(join(directory, 'state.sqlite')).catch(() => { throw new Error('База ещё не создана. Сначала настройте и запустите службу.'); });
     const release = command === 'retry' ? await acquireLock(directory) : undefined;
-    const store = new Store(join(directory, 'state.sqlite'));
+    const store = version === 2 && (await loadNetworkConfig(directory)).config.role === 'hub' ? new HubStore(join(directory, 'state.sqlite')) : new Store(join(directory, 'state.sqlite'));
     try {
       if (command === 'status') console.log(JSON.stringify(store.status(), null, 2));
       else if (command === 'feedback') console.log(JSON.stringify(store.feedback(), null, 2));

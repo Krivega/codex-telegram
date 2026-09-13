@@ -9,3 +9,9 @@ config.local.json
 *.log
 .DS_Store
 coverage/
+config.json
+pending-pair.json
+artifacts/
+*.pem
+*.key
+*.tmp

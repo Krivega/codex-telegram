@@ -2,14 +2,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { chmodSync } from 'node:fs';
 import type { TelegramUpdate } from '../types.ts';
 
-export type Route = { threadId: string; turnId?: string };
+export type Route = { hostId?: string; threadId: string; turnId?: string };
 export type JobState = 'pending' | 'submitting' | 'queued' | 'submitted' | 'uncertain' | 'done' | 'failed';
 export type Job = {
-  id: string; threadId: string; chatId: number; messageId: number;
+  hostId?: string; id: string; threadId: string; chatId: number; messageId: number;
   text: string; clientId: string; state: JobState; queuedId?: string;
 };
 export type DeliveryBody =
-  | { kind: 'text'; text: string }
+  | { kind: 'text'; text: string; fullText?: string }
   | { kind: 'file'; root: string; path: string; name: string; sha256: string };
 export type Delivery = {
   id: number; key: string; chatId: number; replyTo?: number;
@@ -18,7 +18,7 @@ export type Delivery = {
   error?: string;
 };
 export class Store {
-  private db: DatabaseSync;
+  protected db: DatabaseSync;
   constructor(path: string) {
     this.db = new DatabaseSync(path);
     if (path !== ':memory:') chmodSync(path, 0o600);
@@ -50,8 +50,10 @@ export class Store {
     this.setMeta('identity', identity);
   }
   recover(): void {
-    this.db.exec("UPDATE jobs SET state='uncertain' WHERE state='submitting'; UPDATE outbox SET state='uncertain',error='Отправка прервалась; требуется проверка доставки.' WHERE state='sending';");
+    this.recoverJobs();
+    this.db.exec("UPDATE outbox SET state='uncertain',error='Отправка прервалась; требуется проверка доставки.' WHERE state='sending';");
   }
+  recoverJobs(): void { this.db.exec("UPDATE jobs SET state='uncertain' WHERE state='submitting'"); }
   ingest(updates: TelegramUpdate[]): void {
     this.transaction(() => {
       let offset = Number(this.getMeta('telegramOffset') ?? 0);
@@ -77,6 +79,10 @@ export class Store {
   markTurn(threadId: string, turnId: string): void { this.db.prepare('INSERT OR IGNORE INTO turns VALUES (?,?)').run(threadId, turnId); }
   saveJob(job: Job): void {
     this.db.prepare('INSERT INTO jobs VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,state=excluded.state').run(job.id, JSON.stringify(job), job.state);
+  }
+  job(id: string): Job | undefined {
+    const row = this.db.prepare('SELECT payload,state FROM jobs WHERE id=?').get(id) as { payload: string; state: JobState } | undefined;
+    return row ? { ...JSON.parse(row.payload), state: row.state } : undefined;
   }
   jobs(): Job[] {
     return (this.db.prepare("SELECT payload,state FROM jobs WHERE state NOT IN ('done','failed') ORDER BY rowid").all() as { payload: string; state: JobState }[]).map((row) => ({ ...JSON.parse(row.payload), state: row.state }));

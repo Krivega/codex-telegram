@@ -47,22 +47,30 @@ export function validateConfig(value: unknown): Config {
   if (!c.telegram || !c.codex || !c.notifications || !c.artifacts) throw new Error('В настройках отсутствует обязательный раздел.');
   fields(c, ['version', 'hostId', 'telegram', 'codex', 'notifications', 'artifacts'], 'config');
   fields(c.telegram, ['userId', 'chatId', 'botId', 'initialOffset'], 'telegram');
-  fields(c.codex, ['executable', 'socketPath', 'threadIds', 'pollIntervalMs'], 'codex');
-  fields(c.notifications, ['maxTextLength'], 'notifications');
-  fields(c.artifacts, ['maxFileBytes', 'maxFiles'], 'artifacts');
   integer(c.telegram.userId, 'telegram.userId', 1, Number.MAX_SAFE_INTEGER);
   integer(c.telegram.chatId, 'telegram.chatId', 1, Number.MAX_SAFE_INTEGER);
   integer(c.telegram.botId, 'telegram.botId', 1, Number.MAX_SAFE_INTEGER);
   integer(c.telegram.initialOffset, 'telegram.initialOffset', 0, Number.MAX_SAFE_INTEGER);
   if (c.telegram.userId !== c.telegram.chatId) throw new Error('Первая версия поддерживает личный чат владельца с ботом.');
+  validateExecutionSettings(c);
+  return c;
+}
+export function validateExecutionSettings(c: Pick<Config, 'codex' | 'notifications' | 'artifacts'>): void {
+  if (!c.codex || typeof c.codex !== 'object') throw new Error('Не указан раздел codex.');
+  fields(c.codex, ['executable', 'socketPath', 'threadIds', 'pollIntervalMs'], 'codex');
   if (typeof c.codex.executable !== 'string' || !c.codex.executable.trim()) throw new Error('Не указан исполняемый файл Codex.');
   if (typeof c.codex.socketPath !== 'string' || !isAbsolute(c.codex.socketPath)) throw new Error('codex.socketPath должен быть абсолютным путём.');
   if (!Array.isArray(c.codex.threadIds) || c.codex.threadIds.some((id) => typeof id !== 'string' || !/^[\w-]+$/.test(id))) throw new Error('Неверный список codex.threadIds.');
   integer(c.codex.pollIntervalMs, 'codex.pollIntervalMs', 1000, 300000);
+  validateLimits(c);
+}
+export function validateLimits(c: Pick<Config, 'notifications' | 'artifacts'>): void {
+  if (!c.notifications || typeof c.notifications !== 'object' || !c.artifacts || typeof c.artifacts !== 'object') throw new Error('Не указаны ограничения уведомлений и вложений.');
+  fields(c.notifications, ['maxTextLength'], 'notifications');
+  fields(c.artifacts, ['maxFileBytes', 'maxFiles'], 'artifacts');
   integer(c.notifications.maxTextLength, 'notifications.maxTextLength', 200, 3500);
   integer(c.artifacts.maxFileBytes, 'artifacts.maxFileBytes', 1024, 49 * 1024 * 1024);
   integer(c.artifacts.maxFiles, 'artifacts.maxFiles', 1, 10);
-  return c;
 }
 export async function writePrivateJson(path: string, value: unknown): Promise<void> {
   const tmp = `${path}.${randomUUID()}.tmp`;

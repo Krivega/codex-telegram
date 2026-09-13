@@ -36,7 +36,7 @@ export class CodexRpc {
     const lines = createInterface({ input: child.stdout });
     lines.on('line', (line) => { if (this.child === child) this.receive(line); });
     await this.request('initialize', {
-      clientInfo: { name: 'codex_telegram', title: 'Codex Telegram', version: '0.1.0' },
+      clientInfo: { name: 'codex_telegram', title: 'Codex Telegram', version: '0.2.0' },
       capabilities: { experimentalApi: true },
     });
     this.write({ method: 'initialized' });

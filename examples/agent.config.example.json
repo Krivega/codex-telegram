@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "role": "agent",
+  "hubId": "returned-by-pairing",
+  "hostId": "returned-by-pairing",
+  "serverUrl": "https://codex-bot.example.com",
+  "chatId": 123456789,
+  "codex": {
+    "executable": "/absolute/path/to/codex",
+    "socketPath": "/absolute/path/to/.codex/app-server-control/app-server-control.sock",
+    "threadIds": [],
+    "pollIntervalMs": 5000
+  },
+  "notifications": {
+    "maxTextLength": 3200
+  },
+  "artifacts": {
+    "maxFileBytes": 20971520,
+    "maxFiles": 5
+  }
+}
