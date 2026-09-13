@@ -1,0 +1,11 @@
+node_modules/
+.state/
+.env
+.env.*
+!.env.example
+secrets.json
+config.local.json
+*.sqlite*
+*.log
+.DS_Store
+coverage/

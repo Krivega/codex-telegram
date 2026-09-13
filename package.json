@@ -1,0 +1,32 @@
+{
+  "name": "codex-telegram",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Личная связь Telegram с локальными задачами Codex",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "codex-telegram": "bin/codex-telegram.mjs"
+  },
+  "scripts": {
+    "setup": "node bin/codex-telegram.mjs setup",
+    "start": "node bin/codex-telegram.mjs start",
+    "doctor": "node bin/codex-telegram.mjs doctor",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md",
+    "docs",
+    "config.example.json"
+  ],
+  "devDependencies": {
+    "@types/node": "26.5.1",
+    "typescript": "7.0.2"
+  }
+}

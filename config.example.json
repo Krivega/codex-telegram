@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hostId": "replace-with-a-unique-host-id",
+  "telegram": {
+    "userId": 123456789,
+    "chatId": 123456789,
+    "botId": 1234567890,
+    "initialOffset": 0
+  },
+  "codex": {
+    "executable": "/absolute/path/to/codex",
+    "socketPath": "/absolute/path/to/app-server-control.sock",
+    "threadIds": [],
+    "pollIntervalMs": 5000
+  },
+  "notifications": { "maxTextLength": 3200 },
+  "artifacts": { "maxFileBytes": 20971520, "maxFiles": 5 }
+}
