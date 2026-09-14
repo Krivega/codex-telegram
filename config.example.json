@@ -8,7 +8,6 @@
     "initialOffset": 0
   },
   "codex": {
-    "executable": "/absolute/path/to/codex",
     "socketPath": "/absolute/path/to/app-server-control.sock",
     "threadIds": [],
     "pollIntervalMs": 5000

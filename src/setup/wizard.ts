@@ -1,11 +1,11 @@
+import { configureExecution } from './execution.ts';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
 import { access, mkdir } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { defaults, loadConfig, saveConfig } from '../config/config.ts';
 import type { Config } from '../config/config.ts';
 import { configureTelegram } from './telegram.ts';
-import { configureCodexExecutable } from './codex.ts';
 import { acquireLock } from '../storage/lock.ts';
 
 export async function setup(directory: string): Promise<void> {
@@ -26,15 +26,9 @@ export async function setup(directory: string): Promise<void> {
       try { return await ask(''); } finally { hidden = false; process.stdout.write('\n'); }
     }, existing ? { telegram: config.telegram, token: existing.token } : undefined);
     config.telegram = binding.telegram;
-    config.codex.executable = await configureCodexExecutable(ask, config.codex.executable);
-    const socket = await ask(`Адрес локального сокета Codex [${config.codex.socketPath}]: `);
-    if (socket) config.codex.socketPath = isAbsolute(socket) ? socket : resolve(socket);
-    const selected = await ask(`Задачи: all — все основные задачи, либо идентификаторы через запятую [${config.codex.threadIds.join(',') || 'all'}]: `);
-    if (selected) config.codex.threadIds = selected === 'all' ? [] : selected.split(',').map((id) => id.trim()).filter(Boolean);
-    const interval = await ask(`Интервал проверки в секундах [${config.codex.pollIntervalMs / 1000}]: `);
-    if (interval) config.codex.pollIntervalMs = Number(interval) * 1000;
+    config.codex = await configureExecution(config.codex, ask);
     await saveConfig(directory, config, binding.token);
-    await access(config.codex.socketPath).catch(() => console.log('Сокет пока не найден. Проверьте подключение к общему серверу Codex перед запуском.'));
+    if (config.codex.transport !== 'desktop') await access(config.codex.socketPath).catch(() => console.log('Сокет пока не найден. Проверьте подключение к общему серверу Codex перед запуском.'));
     console.log('Настройка сохранена. Следующая команда: npm run doctor. Затем npm start.');
   } finally { hidden = false; input.close(); await release(); }
 }

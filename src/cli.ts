@@ -1,11 +1,13 @@
+import { desktopConnection, prepareDesktopPlugin } from './desktop/runtime.ts';
+import { serveDesktop } from './desktop/server.ts';
+import type { CodexPort } from './types.ts';
+import { codexConnection } from './codex/connection.ts';
 import { parseArgs } from 'node:util';
 import { access, mkdir, stat, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { configDirectory, loadConfig } from './config/config.ts';
-import type { Config } from './config/config.ts';
-import { CodexRpc } from './codex/rpc.ts';
-import { CodexAdapter } from './codex/adapter.ts';
+import { checkCodexReadiness, ensureCodexStartup } from './codex/readiness.ts';
 import { TelegramClient } from './telegram/client.ts';
 import { Store } from './storage/store.ts';
 import { acquireLock } from './storage/lock.ts';
@@ -17,9 +19,6 @@ import { startNetwork, doctorNetwork } from './network/runtime.ts';
 import { HubStore } from './network/store.ts';
 import { installService, uninstallService } from './setup/service.ts';
 
-function codexConnection(config: Config): CodexAdapter {
-  return new CodexAdapter(CodexRpc.overUnixSocket(config.codex.socketPath));
-}
 export async function doctor(directory: string): Promise<void> {
   const { config, token } = await loadConfig(directory);
   let failed = false;
@@ -48,18 +47,12 @@ export async function doctor(directory: string): Promise<void> {
     if ((await telegram.getWebhookInfo()).url) throw new Error('У бота установлен webhook; нужен отдельный бот для этой службы.');
     return `@${me.username}, владелец ${config.telegram.userId}`;
   });
-  const codex = codexConnection(config);
+  const codex = codexConnection(config, directory);
   try {
     await check('Codex', async () => {
-      await access(config.codex.socketPath).catch(() => { throw new Error('Общий сокет не найден. Требуется адрес сервера, который обслуживает нужные задачи приложения. Отдельный сервер не подтверждает эту связь.'); });
-      const threads = await codex.listThreads();
-      const selected = threads.filter((thread) => config.codex.threadIds.length === 0 || config.codex.threadIds.includes(thread.id));
-      if (!selected.length) throw new Error('В указанном сервере не найдены выбранные задачи.');
-      await codex.listTurns(selected[0]!);
-      const loaded = selected.find((thread) => thread.status.type !== 'notLoaded' && thread.canAcceptDirectInput === true);
-      if (!loaded) throw new Error('История доступна, но этот сервер не обслуживает открытую задачу приложения. Службу запускать нельзя: нужен поддерживаемый приложением общий сервер, а не отдельный демон или внутренняя настройка клиента.');
-      await codex.listQueue(loaded.id);
-      return `${selected.length} задач; чтение истории и очереди доступно. Совпадение с окном приложения проверяется отдельно.`;
+      if (config.codex.transport !== 'desktop') await access(config.codex.socketPath).catch(() => { throw new Error('Общий сокет не найден. Требуется адрес сервера, который обслуживает нужные задачи приложения. Отдельный сервер не подтверждает эту связь.'); });
+      const count = await checkCodexReadiness(codex, config.codex.threadIds);
+      return config.codex.transport === 'desktop' ? `${count} журналов и локальная очередь доступны; отправку через диспетчер проверьте вручную.` : `${count} открытых задач; история и очередь каждой доступны. Совпадение с окном приложения проверяется отдельно.`;
     });
   } finally { codex.close(); }
   if (failed) throw new Error('Проверка обнаружила проблемы. Служба ещё не готова к работе.');
@@ -69,15 +62,17 @@ export async function start(directory: string): Promise<void> {
   const { config, token } = await loadConfig(directory);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const release = await acquireLock(directory);
-  const codex = codexConnection(config);
+  let codex: CodexPort | undefined;
   let store: Store | undefined;
   const stop = new AbortController();
   const stopHandler = () => stop.abort();
   process.once('SIGINT', stopHandler); process.once('SIGTERM', stopHandler);
   try {
+    codex = codexConnection(config, directory);
     const telegram = new TelegramClient(token);
     if ((await telegram.getMe()).id !== config.telegram.botId) throw new Error('Токен принадлежит другому боту.');
     if ((await telegram.getWebhookInfo()).url) throw new Error('Бот используется другим получателем webhook.');
+    await ensureCodexStartup(directory, config, codex);
     store = new Store(join(directory, 'state.sqlite'));
     const bridge = new Bridge(config, directory, store, codex, telegram);
     let lastDiagnostic = '';
@@ -113,7 +108,7 @@ export async function start(directory: string): Promise<void> {
     catch (error) { stop.abort(); await Promise.allSettled(tasks); throw error; }
     finally { stop.abort(); }
   } finally {
-    stop.abort(); codex.close(); store?.close(); await release();
+    stop.abort(); codex?.close(); store?.close(); await release();
     process.removeListener('SIGINT', stopHandler); process.removeListener('SIGTERM', stopHandler);
   }
 }
@@ -124,13 +119,30 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const directory = parsed.values.home ? resolve(parsed.values.home) : configDirectory();
   const command = parsed.positionals[0] ?? 'help';
   if (parsed.values.help || command === 'help') {
-    console.log('Codex Telegram\n\nsetup [--role hub|agent|local] — пошаговая настройка\ndoctor — проверка соединений без отправки сообщений\nstart — запуск службы\npair --name НАЗВАНИЕ — выдать код подключения на едином узле\nhosts — подключённые компьютеры\nrevoke --host ID — отозвать ключ компьютера\nstatus — очередь и неопределённые доставки\nfeedback — сохранённые замечания\nconfig — показать настройки без секретов\nservice install | uninstall — автоматический запуск на macOS\nretry --delivery ID --confirm-duplicate-risk — повторить доставку после проверки Telegram\n\n--home PATH или CODEX_TELEGRAM_HOME — отдельный каталог настроек.');
+    console.log('Codex Telegram\n\nsetup [--role hub|agent|local] — пошаговая настройка\ndoctor — проверка соединений без отправки сообщений\nstart — запуск службы\ndesktop prepare | check | status — подключение приложения через плагин\npair --name НАЗВАНИЕ — выдать код подключения на едином узле\nhosts — подключённые компьютеры\nrevoke --host ID — отозвать ключ компьютера\nstatus — очередь и неопределённые доставки\nfeedback — сохранённые замечания\nconfig — показать настройки без секретов\nservice install | uninstall — автоматический запуск на macOS\nretry --delivery ID --confirm-duplicate-risk — повторить доставку после проверки Telegram\n\n--home PATH или CODEX_TELEGRAM_HOME — отдельный каталог настроек.');
     return;
   }
   const version = await readFile(join(directory, 'config.json'), 'utf8').then((raw) => JSON.parse(raw).version as number, (error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return undefined;
     throw error;
   });
+  if (command === 'desktop') {
+    const action = parsed.positionals[1];
+    if (action === 'serve') return serveDesktop(directory);
+    if (action === 'prepare') { console.log(await prepareDesktopPlugin(directory)); return; }
+    const adapter = await desktopConnection(directory);
+    try {
+      if (action === 'status') console.log(JSON.stringify(adapter.mailbox.status(), null, 2));
+      else if (action === 'claim') console.log(JSON.stringify(await adapter.claim()));
+      else if (action === 'check') console.log(JSON.stringify((await adapter.listThreads()).map(({ id, status }) => ({ id, status })), null, 2));
+      else if (action === 'report') {
+        const [id, token, state] = parsed.positionals.slice(2);
+        if (!id || !token || !['accepted', 'uncertain'].includes(state ?? '')) throw new Error('desktop report ID TOKEN accepted|uncertain');
+        adapter.mailbox.report(id, token, state as 'accepted' | 'uncertain');
+      } else throw new Error('desktop prepare | serve | status | check | claim | report');
+    } finally { adapter.close(); }
+    return;
+  }
   if (command === 'setup') {
     if (parsed.values.role === 'local' || (version === 1 && !parsed.values.role)) return setup(directory);
     return setupNetwork(directory, parsed.values.role);
@@ -141,8 +153,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     if (command === 'config') { console.log(JSON.stringify((await loadNetworkConfig(directory)).config, null, 2)); return; }
     if (command === 'service' && parsed.positionals[1] === 'install') {
       await doctorNetwork(directory);
-      const { config } = await loadNetworkConfig(directory);
-      return installService(directory, config.role === 'hub' ? process.execPath : config.codex.executable);
+      return installService(directory);
     }
     if (['pair', 'hosts', 'revoke'].includes(command)) {
       const { config } = await loadNetworkConfig(directory);
@@ -168,7 +179,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     if (parsed.positionals[1] !== 'install') throw new Error('Используйте service install или service uninstall.');
     await access(join(directory, 'secrets.json')).catch(() => { throw new Error('Для автоматического запуска сохраните токен через setup. Переменная текущего терминала не передаётся launchd.'); });
     await doctor(directory);
-    return installService(directory, (await loadConfig(directory)).config.codex.executable);
+    return installService(directory);
   }
   if (['status', 'feedback', 'retry'].includes(command)) {
     await access(join(directory, 'state.sqlite')).catch(() => { throw new Error('База ещё не создана. Сначала настройте и запустите службу.'); });

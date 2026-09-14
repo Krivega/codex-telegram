@@ -7,7 +7,7 @@ export type Config = {
   version: 1;
   hostId: string;
   telegram: { userId: number; chatId: number; botId: number; initialOffset: number };
-  codex: { executable: string; socketPath: string; threadIds: string[]; pollIntervalMs: number };
+  codex: { transport?: 'unix' | 'desktop'; sessionsPath?: string; executable?: string; socketPath: string; threadIds: string[]; pollIntervalMs: number };
   notifications: { maxTextLength: number };
   artifacts: { maxFileBytes: number; maxFiles: number };
 };
@@ -23,7 +23,6 @@ export function defaults(): Config {
     hostId: randomUUID(),
     telegram: { userId: 0, chatId: 0, botId: 0, initialOffset: 0 },
     codex: {
-      executable: 'codex',
       socketPath: join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'app-server-control', 'app-server-control.sock'),
       threadIds: [], pollIntervalMs: 5000,
     },
@@ -57,10 +56,13 @@ export function validateConfig(value: unknown): Config {
 }
 export function validateExecutionSettings(c: Pick<Config, 'codex' | 'notifications' | 'artifacts'>): void {
   if (!c.codex || typeof c.codex !== 'object') throw new Error('Не указан раздел codex.');
-  fields(c.codex, ['executable', 'socketPath', 'threadIds', 'pollIntervalMs'], 'codex');
-  if (typeof c.codex.executable !== 'string' || !c.codex.executable.trim()) throw new Error('Не указан исполняемый файл Codex.');
+  fields(c.codex, ['transport', 'sessionsPath', 'executable', 'socketPath', 'threadIds', 'pollIntervalMs'], 'codex');
+  if (c.codex.executable !== undefined && typeof c.codex.executable !== 'string') throw new Error('Устаревшее поле codex.executable должно быть строкой; его можно удалить.');
   if (typeof c.codex.socketPath !== 'string' || !isAbsolute(c.codex.socketPath)) throw new Error('codex.socketPath должен быть абсолютным путём.');
   if (!Array.isArray(c.codex.threadIds) || c.codex.threadIds.some((id) => typeof id !== 'string' || !/^[\w-]+$/.test(id))) throw new Error('Неверный список codex.threadIds.');
+  if (c.codex.transport !== undefined && !['unix', 'desktop'].includes(c.codex.transport)) throw new Error('codex.transport: укажите unix или desktop.');
+  if (c.codex.sessionsPath !== undefined && (typeof c.codex.sessionsPath !== 'string' || !isAbsolute(c.codex.sessionsPath))) throw new Error('codex.sessionsPath должен быть абсолютным путём.');
+  if (c.codex.transport === 'desktop' && (!c.codex.sessionsPath || !c.codex.threadIds.length)) throw new Error('Desktop требует sessionsPath и явный список threadIds; all не поддерживается.');
   integer(c.codex.pollIntervalMs, 'codex.pollIntervalMs', 1000, 300000);
   validateLimits(c);
 }

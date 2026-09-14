@@ -6,7 +6,6 @@
   "serverUrl": "https://codex-bot.example.com",
   "chatId": 123456789,
   "codex": {
-    "executable": "/absolute/path/to/codex",
     "socketPath": "/absolute/path/to/.codex/app-server-control/app-server-control.sock",
     "threadIds": [],
     "pollIntervalMs": 5000

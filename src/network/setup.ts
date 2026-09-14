@@ -1,3 +1,4 @@
+import { configureExecution } from '../setup/execution.ts';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
@@ -6,7 +7,6 @@ import { join, resolve } from 'node:path';
 import { defaults, writePrivateJson } from '../config/config.ts';
 import { acquireLock } from '../storage/lock.ts';
 import { configureTelegram } from '../setup/telegram.ts';
-import { configureCodexExecutable } from '../setup/codex.ts';
 import { HubClient } from './client.ts';
 import { hubDefaults, loadNetworkConfig, saveNetworkConfig, serverUrl } from './config.ts';
 import type { AgentConfig, HubConfig, NetworkConfig } from './config.ts';
@@ -52,13 +52,7 @@ async function configureAgent(directory: string, ask: Ask, hidden: Ask, existing
     await unlink(pendingPath);
     console.log(`Компьютер зарегистрирован: ${string(paired.name, 60)}. Токен Telegram не передавался.`);
   }
-  config.codex.executable = await configureCodexExecutable(ask, config.codex.executable);
-  const socket = await ask(`Сокет общего сервера Codex [${config.codex.socketPath}]: `);
-  if (socket) config.codex.socketPath = resolve(socket);
-  const threads = await ask(`Задачи: all или идентификаторы через запятую [${config.codex.threadIds.join(',') || 'all'}]: `);
-  if (threads) config.codex.threadIds = threads === 'all' ? [] : threads.split(',').map((id) => id.trim()).filter(Boolean);
-  const interval = await ask(`Интервал проверки Codex, секунды [${config.codex.pollIntervalMs / 1000}]: `);
-  if (interval) config.codex.pollIntervalMs = Number(interval) * 1000;
+  config.codex = await configureExecution(config.codex, ask);
   return { config, secret: token };
 }
 export async function setupNetwork(directory: string, requestedRole?: string): Promise<void> {

@@ -1,6 +1,6 @@
 {
   "name": "codex-telegram",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Один Telegram-бот для задач Codex на нескольких компьютерах",
   "type": "module",
@@ -24,10 +24,13 @@
     "README.md",
     "docs",
     "config.example.json",
-    "examples"
+    "examples",
+    "plugins"
   ],
   "dependencies": {
-    "ws": "8.21.3"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "ws": "8.21.3",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "26.5.1",

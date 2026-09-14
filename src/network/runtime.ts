@@ -1,3 +1,4 @@
+import { codexConnection } from '../codex/connection.ts';
 import { access, mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,13 +11,9 @@ import { Coordinator } from './coordinator.ts';
 import { AgentLink } from './agent.ts';
 import { CodexWorker } from '../bridge/worker.ts';
 import { TelegramClient } from '../telegram/client.ts';
-import { CodexAdapter } from '../codex/adapter.ts';
-import { CodexRpc } from '../codex/rpc.ts';
+import { checkCodexReadiness, ensureCodexStartup } from '../codex/readiness.ts';
 import { acquireLock } from '../storage/lock.ts';
 
-export function codexConnection(config: Pick<AgentConfig, 'codex'>): CodexAdapter {
-  return new CodexAdapter(CodexRpc.overUnixSocket(config.codex.socketPath));
-}
 function logger(): (message: string) => void {
   const last = new Map<string, number>();
   return (message) => {
@@ -52,9 +49,11 @@ async function runHub(config: HubConfig, directory: string, token: string, stop:
   } finally { await server.close(); store.close(); }
 }
 async function runAgent(config: AgentConfig, directory: string, token: string, stop: AbortController): Promise<void> {
-  const store = new AgentStore(join(directory, 'state.sqlite'));
-  const codex = codexConnection(config);
+  const codex = codexConnection(config, directory);
+  let store: AgentStore | undefined;
   try {
+    await ensureCodexStartup(directory, config, codex);
+    store = new AgentStore(join(directory, 'state.sqlite'));
     const link = new AgentLink(config, directory, store, new HubClient(config.serverUrl, token));
     const worker = new CodexWorker(config, directory, store, codex);
     const log = logger(); worker.onDiagnostic = log; link.onDiagnostic = log;
@@ -71,7 +70,7 @@ async function runAgent(config: AgentConfig, directory: string, token: string, s
         await link.publish(stop.signal);
       }, () => log('Нет подтверждения от единого узла. Проверьте соединение и ключ командой doctor.')),
     ]);
-  } finally { codex.close(); store.close(); }
+  } finally { codex.close(); store?.close(); }
 }
 export async function startNetwork(directory: string): Promise<void> {
   const { config, secret } = await loadNetworkConfig(directory);
@@ -115,15 +114,12 @@ export async function doctorNetwork(directory: string): Promise<void> {
       if (result.hostId !== config.hostId || result.hubId !== config.hubId) throw new Error('Ключ принадлежит другому компьютеру.');
       return result.name ?? config.hostId;
     });
-    const codex = codexConnection(config);
+    const codex = codexConnection(config, directory);
     try {
       await check('Codex', async () => {
-        await access(config.codex.socketPath).catch(() => { throw new Error('Не найден сокет сервера, обслуживающего задачи приложения Codex.'); });
-        const threads = (await codex.listThreads()).filter((thread) => !config.codex.threadIds.length || config.codex.threadIds.includes(thread.id));
-        const loaded = threads.find((thread) => thread.status.type !== 'notLoaded' && thread.canAcceptDirectInput === true);
-        if (!loaded) throw new Error('Этот сервер не обслуживает открытую задачу приложения. Службу запускать нельзя: нужен поддерживаемый приложением общий сервер, а не отдельный демон или внутренняя настройка клиента.');
-        await codex.listTurns(loaded); await codex.listQueue(loaded.id);
-        return 'чтение истории и очереди доступно; совпадение с окном приложения проверяется отдельно';
+        if (config.codex.transport !== 'desktop') await access(config.codex.socketPath).catch(() => { throw new Error('Не найден сокет сервера, обслуживающего задачи приложения Codex.'); });
+        const count = await checkCodexReadiness(codex, config.codex.threadIds);
+        return config.codex.transport === 'desktop' ? `${count} журналов и локальная очередь доступны; отправку через диспетчер проверьте вручную` : `${count} открытых задач; история и очередь каждой доступны; совпадение с окном приложения проверяется отдельно`;
       });
     } finally { codex.close(); }
   }

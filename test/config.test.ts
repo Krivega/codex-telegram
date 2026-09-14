@@ -23,10 +23,16 @@ test('неверные настройки не принимаются', () => {
   assert.throws(() => validateConfig({ ...config, codex: { ...config.codex, pollIntervalMs: 0 } }), /pollIntervalMs/);
 });
 test('системные пути корректно экранируются в настройках автоматического запуска', () => {
-  const plist = servicePlist('/tmp/Codex & Files', '/Applications/Codex.app/Contents/Resources/codex');
+  const plist = servicePlist('/tmp/Codex & Files');
   assert.ok(plist.includes('/tmp/Codex &amp; Files'));
   assert.ok(plist.includes('bin/codex-telegram.mjs'));
   assert.ok(!plist.includes('telegramBotToken'));
+});
+test('настройка не требует CLI и принимает старый путь без использования', () => {
+  const config = defaults(); config.telegram = { userId: 42, chatId: 42, botId: 123, initialOffset: 0 };
+  assert.equal(validateConfig(config).codex.executable, undefined);
+  assert.equal(validateConfig({ ...config, codex: { ...config.codex, executable: '/missing/old/codex' } }).codex.executable, '/missing/old/codex');
+  assert.throws(() => validateConfig({ ...config, codex: { ...config.codex, executable: 123 } }), /executable/);
 });
 test('секрет, случайно добавленный в конфигурацию, отклоняется без вывода значения', () => {
   const config = defaults(); config.telegram = { userId: 42, chatId: 42, botId: 123, initialOffset: 0 };
