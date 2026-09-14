@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { WebSocketServer } from 'ws';
 import { CodexRpc } from '../src/codex/rpc.ts';
 import { CodexAdapter } from '../src/codex/adapter.ts';
 import { TelegramClient } from '../src/telegram/client.ts';
@@ -8,7 +13,7 @@ import { RejectedOperationError, UncertainOperationError } from '../src/types.ts
 
 const script = fileURLToPath(new URL('./rpc-fixture.mjs', import.meta.url));
 test('адаптер проходит инициализацию, читает исходную задачу и использует фактическую схему очереди', async (t) => {
-  const rpc = new CodexRpc(process.execPath, [script]); const adapter = new CodexAdapter(rpc); t.after(() => adapter.close());
+  const rpc = CodexRpc.overStdio(process.execPath, [script]); const adapter = new CodexAdapter(rpc); t.after(() => adapter.close());
   const threads = await adapter.listThreads(); assert.equal(threads[0]!.id, 'original');
   assert.deepEqual(await adapter.listTurns(threads[0]!), []);
   assert.deepEqual(await adapter.queueMessage('original', 'client', 'Привет'), { id: 'queued', clientUserMessageId: 'client' });
@@ -16,10 +21,49 @@ test('адаптер проходит инициализацию, читает �
   await adapter.startQueued('original', 'queued');
 });
 test('неизвестный результат RPC сохраняет неопределённость, соединение можно восстановить', async (t) => {
-  const rpc = new CodexRpc(process.execPath, [script], 100); t.after(() => rpc.close());
+  const rpc = CodexRpc.overStdio(process.execPath, [script], 100); t.after(() => rpc.close());
   await rpc.connect(); await assert.rejects(rpc.request('hang', {}), UncertainOperationError);
   await assert.rejects(rpc.request('exit', {}), UncertainOperationError);
   await rpc.connect(); assert.ok(await rpc.request('thread/list', {}));
+});
+test('Unix-сокет использует WebSocket и завершает рукопожатие Codex', async (t) => {
+  if (process.platform === 'win32') { t.skip('Unix-сокеты проверяются на macOS и Linux.'); return; }
+  const directory = await mkdtemp(join(tmpdir(), 'codex-telegram-ws-'));
+  const socketPath = join(directory, 'app-server.sock');
+  const server = createServer();
+  const webSockets = new WebSocketServer({ server });
+  const received: { id?: number; method?: string; params?: unknown }[] = [];
+  let requestPath = '';
+  webSockets.on('connection', (socket, request) => {
+    requestPath = request.url ?? '';
+    socket.on('message', (data) => {
+      const message = JSON.parse(data.toString()) as { id?: number; method?: string; params?: unknown };
+      received.push(message);
+      if (message.method === 'initialize') socket.send(JSON.stringify({ id: message.id, result: { userAgent: 'test' } }));
+      if (message.method === 'thread/list') socket.send(JSON.stringify({ id: message.id, result: { data: [], nextCursor: null } }));
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  const rpc = CodexRpc.overUnixSocket(socketPath, 1000);
+  t.after(async () => {
+    rpc.close();
+    for (const socket of webSockets.clients) socket.terminate();
+    await new Promise<void>((resolve) => webSockets.close(() => resolve()));
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await rm(directory, { recursive: true, force: true });
+  });
+  await rpc.connect();
+  assert.deepEqual(await rpc.request('thread/list', {}), { data: [], nextCursor: null });
+  assert.equal(requestPath, '/rpc');
+  assert.deepEqual(received.map(({ method }) => method), ['initialize', 'initialized', 'thread/list']);
+  assert.deepEqual(received[0]!.params, {
+    clientInfo: { name: 'codex_telegram', title: 'Codex Telegram', version: '0.2.0' },
+    capabilities: { experimentalApi: true },
+  });
+  assert.deepEqual(received[1]!.params, {});
 });
 test('Bot API отправляет обычный текст с привязкой ответа и двоичное вложение', async () => {
   const requests: { url: string; init: RequestInit }[] = [];

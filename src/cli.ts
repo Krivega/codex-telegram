@@ -18,7 +18,7 @@ import { HubStore } from './network/store.ts';
 import { installService, uninstallService } from './setup/service.ts';
 
 function codexConnection(config: Config): CodexAdapter {
-  return new CodexAdapter(new CodexRpc(config.codex.executable, ['app-server', 'proxy', '--sock', config.codex.socketPath]));
+  return new CodexAdapter(CodexRpc.overUnixSocket(config.codex.socketPath));
 }
 export async function doctor(directory: string): Promise<void> {
   const { config, token } = await loadConfig(directory);
@@ -57,7 +57,7 @@ export async function doctor(directory: string): Promise<void> {
       if (!selected.length) throw new Error('В указанном сервере не найдены выбранные задачи.');
       await codex.listTurns(selected[0]!);
       const loaded = selected.find((thread) => thread.status.type !== 'notLoaded' && thread.canAcceptDirectInput === true);
-      if (!loaded) throw new Error('История доступна, но нет открытой задачи, принимающей сообщения. Откройте задачу в приложении и повторите проверку.');
+      if (!loaded) throw new Error('История доступна, но этот сервер не обслуживает открытую задачу приложения. Службу запускать нельзя: нужен поддерживаемый приложением общий сервер, а не отдельный демон или внутренняя настройка клиента.');
       await codex.listQueue(loaded.id);
       return `${selected.length} задач; чтение истории и очереди доступно. Совпадение с окном приложения проверяется отдельно.`;
     });

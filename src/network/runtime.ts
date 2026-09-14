@@ -15,7 +15,7 @@ import { CodexRpc } from '../codex/rpc.ts';
 import { acquireLock } from '../storage/lock.ts';
 
 export function codexConnection(config: Pick<AgentConfig, 'codex'>): CodexAdapter {
-  return new CodexAdapter(new CodexRpc(config.codex.executable, ['app-server', 'proxy', '--sock', config.codex.socketPath]));
+  return new CodexAdapter(CodexRpc.overUnixSocket(config.codex.socketPath));
 }
 function logger(): (message: string) => void {
   const last = new Map<string, number>();
@@ -121,7 +121,7 @@ export async function doctorNetwork(directory: string): Promise<void> {
         await access(config.codex.socketPath).catch(() => { throw new Error('Не найден сокет сервера, обслуживающего задачи приложения Codex.'); });
         const threads = (await codex.listThreads()).filter((thread) => !config.codex.threadIds.length || config.codex.threadIds.includes(thread.id));
         const loaded = threads.find((thread) => thread.status.type !== 'notLoaded' && thread.canAcceptDirectInput === true);
-        if (!loaded) throw new Error('Нет открытой задачи, принимающей сообщения. Проверьте общий сервер Codex.');
+        if (!loaded) throw new Error('Этот сервер не обслуживает открытую задачу приложения. Службу запускать нельзя: нужен поддерживаемый приложением общий сервер, а не отдельный демон или внутренняя настройка клиента.');
         await codex.listTurns(loaded); await codex.listQueue(loaded.id);
         return 'чтение истории и очереди доступно; совпадение с окном приложения проверяется отдельно';
       });
