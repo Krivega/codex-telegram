@@ -12,6 +12,7 @@ export class AgentLink {
   private directory: string;
   private store: AgentStore;
   private client: HubClient;
+  permitsThread: (id: string) => boolean = () => true;
   onDiagnostic: (message: string) => void = () => {};
   constructor(config: AgentConfig, directory: string, store: AgentStore, client: HubClient) {
     this.config = config; this.directory = directory; this.store = store; this.client = client;
@@ -38,7 +39,7 @@ export class AgentLink {
     for (const delivery of this.store.deliveries().slice(0, 20)) {
       const route = delivery.route;
       if (!route) { this.store.setDeliveryState(delivery.id, 'failed', 'Не указана исходная задача.'); continue; }
-      if (this.config.codex.threadIds.length && !this.config.codex.threadIds.includes(route.threadId)) {
+      if (!this.permitsThread(route.threadId) || (this.config.codex.threadIds.length && !this.config.codex.threadIds.includes(route.threadId))) {
         this.store.setDeliveryState(delivery.id, 'failed', 'Доступ к задаче отключён в настройках.'); continue;
       }
       let bytes: Buffer | undefined;

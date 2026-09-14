@@ -1,6 +1,6 @@
 {
   "name": "codex-telegram",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Передача поручений Telegram в исходные задачи Codex",
   "author": {
     "name": "Krivega"

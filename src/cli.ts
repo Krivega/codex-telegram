@@ -51,7 +51,7 @@ export async function doctor(directory: string): Promise<void> {
   try {
     await check('Codex', async () => {
       if (config.codex.transport !== 'desktop') await access(config.codex.socketPath).catch(() => { throw new Error('Общий сокет не найден. Требуется адрес сервера, который обслуживает нужные задачи приложения. Отдельный сервер не подтверждает эту связь.'); });
-      const count = await checkCodexReadiness(codex, config.codex.threadIds);
+      const count = await checkCodexReadiness(codex, config.codex.threadIds, { allowEmpty: config.codex.transport === 'desktop' && !config.codex.threadIds.length });
       return config.codex.transport === 'desktop' ? `${count} журналов и локальная очередь доступны; отправку через диспетчер проверьте вручную.` : `${count} открытых задач; история и очередь каждой доступны. Совпадение с окном приложения проверяется отдельно.`;
     });
   } finally { codex.close(); }
@@ -133,13 +133,18 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     const adapter = await desktopConnection(directory);
     try {
       if (action === 'status') console.log(JSON.stringify(adapter.mailbox.status(), null, 2));
-      else if (action === 'claim') console.log(JSON.stringify(await adapter.claim()));
+      else if (action === 'register' || action === 'claim') {
+        const threadId = process.env.CODEX_THREAD_ID;
+        if (!threadId) throw new Error('Эту команду нужно выполнять внутри задачи-диспетчера Codex: CODEX_THREAD_ID отсутствует.');
+        adapter.mailbox.registerDispatcher(threadId);
+        console.log(JSON.stringify(action === 'register' ? { registered: true } : await adapter.claim()));
+      }
       else if (action === 'check') console.log(JSON.stringify((await adapter.listThreads()).map(({ id, status }) => ({ id, status })), null, 2));
       else if (action === 'report') {
         const [id, token, state] = parsed.positionals.slice(2);
         if (!id || !token || !['accepted', 'uncertain'].includes(state ?? '')) throw new Error('desktop report ID TOKEN accepted|uncertain');
         adapter.mailbox.report(id, token, state as 'accepted' | 'uncertain');
-      } else throw new Error('desktop prepare | serve | status | check | claim | report');
+      } else throw new Error('desktop prepare | serve | status | check | register | claim | report');
     } finally { adapter.close(); }
     return;
   }

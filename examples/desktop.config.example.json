@@ -9,10 +9,7 @@
   },
   "codex": {
     "socketPath": "/absolute/path/to/app-server-control.sock",
-    "threadIds": [
-      "replace-with-first-thread-id",
-      "replace-with-second-thread-id"
-    ],
+    "threadIds": [],
     "pollIntervalMs": 5000,
     "transport": "desktop",
     "sessionsPath": "/absolute/path/to/.codex/sessions"

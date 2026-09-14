@@ -11,6 +11,7 @@ export class DesktopMailbox {
     chmodSync(path, 0o600);
     this.db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS identity(value TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS dispatchers(id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, threadId TEXT NOT NULL, text TEXT NOT NULL, state TEXT NOT NULL, token TEXT);`);
     this.db.prepare('INSERT INTO identity SELECT ? WHERE NOT EXISTS(SELECT 1 FROM identity)').run(identity);
     if ((this.db.prepare('SELECT value FROM identity').get() as { value: string }).value !== identity) {
@@ -18,6 +19,11 @@ export class DesktopMailbox {
     }
   }
   close(): void { this.db.close(); }
+  registerDispatcher(id: string): void {
+    if (!/^[\w-]+$/.test(id)) throw new Error('Неверный идентификатор диспетчера.');
+    this.db.prepare('INSERT OR IGNORE INTO dispatchers VALUES (?)').run(id);
+  }
+  dispatchers(): string[] { return (this.db.prepare('SELECT id FROM dispatchers').all() as { id: string }[]).map((row) => row.id); }
   enqueue(id: string, threadId: string, text: string): void {
     this.db.prepare("INSERT OR IGNORE INTO requests VALUES (?,?,?,'queued',NULL)").run(id, threadId, text);
     const saved = this.get(id)!;

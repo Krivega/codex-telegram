@@ -62,7 +62,7 @@ export function validateExecutionSettings(c: Pick<Config, 'codex' | 'notificatio
   if (!Array.isArray(c.codex.threadIds) || c.codex.threadIds.some((id) => typeof id !== 'string' || !/^[\w-]+$/.test(id))) throw new Error('Неверный список codex.threadIds.');
   if (c.codex.transport !== undefined && !['unix', 'desktop'].includes(c.codex.transport)) throw new Error('codex.transport: укажите unix или desktop.');
   if (c.codex.sessionsPath !== undefined && (typeof c.codex.sessionsPath !== 'string' || !isAbsolute(c.codex.sessionsPath))) throw new Error('codex.sessionsPath должен быть абсолютным путём.');
-  if (c.codex.transport === 'desktop' && (!c.codex.sessionsPath || !c.codex.threadIds.length)) throw new Error('Desktop требует sessionsPath и явный список threadIds; all не поддерживается.');
+  if (c.codex.transport === 'desktop' && !c.codex.sessionsPath) throw new Error('Desktop требует sessionsPath.');
   integer(c.codex.pollIntervalMs, 'codex.pollIntervalMs', 1000, 300000);
   validateLimits(c);
 }

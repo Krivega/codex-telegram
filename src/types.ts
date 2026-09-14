@@ -24,6 +24,8 @@ export type Turn = {
 };
 export type QueuedMessage = { id: string; clientUserMessageId: string };
 export interface CodexPort {
+  permitsThread?(id: string): boolean;
+  onDiagnostic?: (message: string) => void;
   listThreads(): Promise<Thread[]>;
   readThread(id: string): Promise<Thread>;
   listTurns(thread: Thread): Promise<Turn[]>;

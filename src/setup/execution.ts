@@ -13,10 +13,9 @@ export async function configureExecution(current: Config['codex'], ask: (prompt:
   } else {
     config.socketPath = resolve(await ask(`Сокет общего сервера Codex [${config.socketPath}]: `) || config.socketPath);
   }
-  const hint = transport === 'desktop' ? 'явные идентификаторы через запятую' : 'all или идентификаторы через запятую';
-  const selected = await ask(`Задачи: ${hint} [${config.threadIds.join(',') || (transport === 'desktop' ? 'обязательно' : 'all')}]: `);
+  const hint = 'all — автоматически, либо ограничить идентификаторами через запятую';
+  const selected = await ask(`Задачи: ${hint} [${config.threadIds.join(',') || 'all'}]: `);
   if (selected) config.threadIds = selected === 'all' ? [] : [...new Set(selected.split(',').map((id) => id.trim()).filter(Boolean))];
-  if (transport === 'desktop' && !config.threadIds.length) throw new Error('Для Desktop укажите хотя бы одну задачу. Попросите Codex показать её идентификатор.');
   const interval = await ask(`Интервал проверки Codex, секунды [${config.pollIntervalMs / 1000}]: `);
   if (interval) config.pollIntervalMs = Number(interval) * 1000;
   return config;

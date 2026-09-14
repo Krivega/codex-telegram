@@ -55,6 +55,7 @@ async function runAgent(config: AgentConfig, directory: string, token: string, s
     await ensureCodexStartup(directory, config, codex);
     store = new AgentStore(join(directory, 'state.sqlite'));
     const link = new AgentLink(config, directory, store, new HubClient(config.serverUrl, token));
+    link.permitsThread = (id) => codex.permitsThread?.(id) ?? true;
     const worker = new CodexWorker(config, directory, store, codex);
     const log = logger(); worker.onDiagnostic = log; link.onDiagnostic = log;
     let codexOnline = false;
@@ -118,7 +119,7 @@ export async function doctorNetwork(directory: string): Promise<void> {
     try {
       await check('Codex', async () => {
         if (config.codex.transport !== 'desktop') await access(config.codex.socketPath).catch(() => { throw new Error('Не найден сокет сервера, обслуживающего задачи приложения Codex.'); });
-        const count = await checkCodexReadiness(codex, config.codex.threadIds);
+        const count = await checkCodexReadiness(codex, config.codex.threadIds, { allowEmpty: config.codex.transport === 'desktop' && !config.codex.threadIds.length });
         return config.codex.transport === 'desktop' ? `${count} журналов и локальная очередь доступны; отправку через диспетчер проверьте вручную` : `${count} открытых задач; история и очередь каждой доступны; совпадение с окном приложения проверяется отдельно`;
       });
     } finally { codex.close(); }

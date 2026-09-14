@@ -88,8 +88,10 @@ test('MCP выдаёт исходный адрес и текст, а восст�
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport); await client.connect(clientTransport);
   t.after(async () => { await client.close(); await server.close(); });
-  assert.equal((await client.listTools()).tools.length, 3);
-  const response = await client.callTool({ name: 'desktop_claim', arguments: {} });
+  assert.equal((await client.listTools()).tools.length, 4);
+  await client.callTool({ name: 'desktop_register', arguments: { threadId: 'dispatcher' } });
+  assert.equal(f.adapter.permitsThread('dispatcher'), false);
+  const response = await client.callTool({ name: 'desktop_claim', arguments: { dispatcherThreadId: 'dispatcher' } });
   const claim = JSON.parse((response.content as { text: string }[])[0]!.text);
   assert.equal(claim.threadId, 'a'); assert.match(claim.prompt, /^\[codex-telegram:tg-123-1\]\nСделай PDF/);
   await client.callTool({ name: 'desktop_report', arguments: { id: claim.id, token: claim.token, state: 'accepted' } });
@@ -105,9 +107,9 @@ test('MCP выдаёт исходный адрес и текст, а восст�
   assert.equal(await f.adapter.claim(), null);
 });
 
-test('настройка Desktop требует список задач; подготовленный плагин запускается с тем же каталогом без токена', async (t) => {
+test('настройка Desktop допускает автоматический выбор; подготовленный плагин запускается с тем же каталогом без токена', async (t) => {
   const f = await fixture(); t.after(f.cleanup);
-  assert.throws(() => validateConfig({ ...f.config, codex: { ...f.config.codex, threadIds: [] } }));
+  assert.deepEqual(validateConfig({ ...f.config, codex: { ...f.config.codex, threadIds: [] } }).codex.threadIds, []);
   const path = await prepareDesktopPlugin(f.directory);
   const mcp = JSON.parse(await readFile(join(path, '.mcp.json'), 'utf8'));
   assert.equal(mcp.mcpServers.codex_telegram.command, process.execPath);

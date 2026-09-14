@@ -18,11 +18,12 @@ export class CodexWorker {
   onDiagnostic: (message: string) => void = () => {};
   constructor(config: WorkerSettings, directory: string, store: Store, codex: CodexPort) {
     this.config = config; this.directory = directory; this.store = store; this.codex = codex;
+    if (codex.onDiagnostic) codex.onDiagnostic = (message) => this.onDiagnostic(message);
     store.recoverJobs();
-    if (!store.getMeta('enabledAt')) store.setMeta('enabledAt', String(Math.floor(Date.now() / 1000)));
+    if (!store.getMeta('enabledAt')) store.setMeta('enabledAt', String(Date.now() / 1000));
   }
   protected permits(threadId: string): boolean {
-    return this.config.codex.threadIds.length === 0 || this.config.codex.threadIds.includes(threadId);
+    return (this.config.codex.threadIds.length === 0 || this.config.codex.threadIds.includes(threadId)) && (this.codex.permitsThread?.(threadId) ?? true);
   }
   async submit(): Promise<void> {
     for (const job of this.store.jobs().filter((job) => job.state === 'pending')) {
