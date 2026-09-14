@@ -5,7 +5,7 @@ import type { DesktopAdapter } from './adapter.ts';
 import { desktopConnection } from './runtime.ts';
 
 export function desktopServer(adapter: DesktopAdapter): McpServer {
-  const server = new McpServer({ name: 'codex-telegram', version: '0.3.1' });
+  const server = new McpServer({ name: 'codex-telegram', version: '0.3.2' });
   const result = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
   server.registerTool('desktop_register', {
     description: 'Зарегистрировать текущую задачу-диспетчер и исключить её из уведомлений и адресатов. Передайте её собственный CODEX_THREAD_ID из окружения текущей задачи. Выполнить до первого прохода очереди.',

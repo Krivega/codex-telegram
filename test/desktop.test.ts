@@ -112,9 +112,13 @@ test('настройка Desktop допускает автоматический
   assert.deepEqual(validateConfig({ ...f.config, codex: { ...f.config.codex, threadIds: [] } }).codex.threadIds, []);
   const path = await prepareDesktopPlugin(f.directory);
   const mcp = JSON.parse(await readFile(join(path, '.mcp.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(join(path, '.codex-plugin', 'plugin.json'), 'utf8'));
+  const setupSkill = await readFile(join(path, 'skills', 'telegram-dispatcher-setup', 'SKILL.md'), 'utf8');
   assert.equal(mcp.mcpServers.codex_telegram.command, process.execPath);
   assert.deepEqual(mcp.mcpServers.codex_telegram.args.slice(-2), ['--home', f.directory]);
   assert.equal(mcp.mcpServers.codex_telegram.env, undefined);
+  assert.match(manifest.interface.defaultPrompt, /telegram-dispatcher-setup/);
+  assert.match(setupSkill, /name: telegram-dispatcher-setup/);
 });
 
 test('повреждённый журнал не раскрывает содержимое в ошибке, а смена бота не использует прежнюю очередь', async (t) => {

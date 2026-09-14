@@ -1,7 +1,7 @@
 {
   "name": "codex-telegram",
-  "version": "0.3.1",
-  "description": "Передача поручений Telegram в исходные задачи Codex",
+  "version": "0.3.2",
+  "description": "Автоматическая передача поручений Telegram в исходные задачи Codex",
   "author": {
     "name": "Krivega"
   },
@@ -9,11 +9,11 @@
   "interface": {
     "displayName": "Codex Telegram",
     "shortDescription": "Поручения из Telegram в задачи Codex.",
-    "longDescription": "Локальный диспетчер очереди Codex Telegram. Требует работающую службу проекта и инструменты приложения Codex.",
+    "longDescription": "Локальный диспетчер очереди Codex Telegram. После одноразовой настройки автоматически передаёт поручения в исходные задачи. Требует работающую службу проекта и инструменты приложения Codex.",
     "developerName": "Krivega",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Проверь очередь Codex Telegram с помощью telegram-dispatcher."
+    "defaultPrompt": "Однократно настрой автоматическую проверку очереди Codex Telegram с помощью $telegram-dispatcher-setup."
   },
   "repository": "https://github.com/Krivega/codex-telegram"
 }

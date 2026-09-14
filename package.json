@@ -1,6 +1,6 @@
 {
   "name": "codex-telegram",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Один Telegram-бот для задач Codex на нескольких компьютерах",
   "type": "module",
