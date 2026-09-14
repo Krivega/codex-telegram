@@ -21,6 +21,9 @@ function turn(id: string, text: string, time: number): string {
   return row('event_msg', { type: 'task_started', turn_id: id, started_at: time / 1000 }, time)
     + row('event_msg', { type: 'task_complete', turn_id: id, completed_at: Math.floor(time / 1000), last_agent_message: text }, time);
 }
+function userMessage(text: string): string {
+  return row('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text }] });
+}
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'ct-discovery-'));
   const config = defaults(); config.telegram = { userId: 42, chatId: 42, botId: 123, initialOffset: 0 };
@@ -41,6 +44,22 @@ test('пустой каталог готов после регистрации �
   assert.deepEqual((await f.adapter.listThreads()).map(x => x.id), ['new']);
   await f.adapter.queueMessage('new', 'client', 'Первое поручение'); await f.adapter.startQueued('new', 'client');
   assert.equal((await f.adapter.claim())?.threadId, 'new');
+});
+
+test('список Desktop показывает первую строку пользовательского запроса вместо UUID', async (t) => {
+  const f = await fixture(); t.after(f.cleanup); f.adapter.mailbox.registerDispatcher('dispatcher');
+  await writeFile(f.path('named'), header('named') + userMessage('<recommended_plugins>\nсписок интеграций\n</recommended_plugins>')
+    + userMessage('# Files mentioned by the user\n\n## My request:\nСобери отчёт по проекту\nПодробности поручения'));
+  const thread = await f.adapter.readThread('named');
+  assert.equal(thread.name, 'Собери отчёт по проекту');
+
+  const store = new Store(join(f.directory, 'state.sqlite')); t.after(() => store.close());
+  const telegram = new TestTelegram(); const bridge = new Bridge(f.config, f.directory, store, f.adapter, telegram);
+  store.ingest([{ update_id: 1, message: { message_id: 1, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/tasks' } }]);
+  await bridge.receive(); await bridge.deliver();
+  assert.equal(telegram.texts[0]!.text, 'Собери отчёт по проекту\nОтветьте на это сообщение, чтобы продолжить задачу.');
+  assert.deepEqual(store.route(42, telegram.texts[0]!.id), { threadId: 'named' });
+  assert.ok(!telegram.texts[0]!.text.includes('named'));
 });
 
 test('новое завершение создаёт уведомление и постоянную привязку; старая история не рассылается', async (t) => {

@@ -4,9 +4,21 @@ import { DesktopCatalog } from './catalog.ts';
 import type { Thread, Turn } from '../types.ts';
 import { CodexUnavailableError } from '../types.ts';
 
-type Journal = { inode: number; offset: number; identity?: string; cwd: string; turns: Map<string, Turn>; current?: string; updatedAt: number };
+type Journal = { inode: number; offset: number; identity?: string; name?: string; cwd: string; turns: Map<string, Turn>; current?: string; updatedAt: number };
 const MAX_LINE = 32 * 1024 * 1024;
+const MAX_NAME = 180;
 export function requestMarker(id: string): string { return `[codex-telegram:${id}]`; }
+
+function taskName(text: unknown): string | undefined {
+  if (typeof text !== 'string') return;
+  const normalized = desktopText(text).replace(/\r\n?/g, '\n').trim();
+  if (!normalized) return;
+  const lines = normalized.split('\n').map((line) => line.trim());
+  const requestIndex = lines.findIndex((line) => line === '## My request:');
+  if (requestIndex < 0 && /^(?:<recommended_plugins>|<environment_context>|# AGENTS\.md instructions for )/.test(normalized)) return;
+  const firstLine = (requestIndex >= 0 ? lines.slice(requestIndex + 1) : lines).find(Boolean);
+  return firstLine?.replace(/\s+/g, ' ').slice(0, MAX_NAME) || undefined;
+}
 
 // Только законченные строки. Курсор не проходит незавершённую запись работающего приложения.
 export class RolloutReader {
@@ -56,7 +68,7 @@ export class RolloutReader {
     } finally { await handle.close(); }
     if (journal.identity !== id || typeof journal.cwd !== 'string' || !journal.cwd) throw new CodexUnavailableError('Формат или идентификатор журнала Codex не прошёл проверку.');
     const turns = [...journal.turns.values()];
-    return { id, name: id, cwd: journal.cwd, updatedAt: journal.updatedAt, canAcceptDirectInput: true,
+    return { id, name: journal.name ?? id, cwd: journal.cwd, updatedAt: journal.updatedAt, canAcceptDirectInput: true,
       status: { type: turns.at(-1)?.status === 'inProgress' ? 'active' : 'idle' }, turns: structuredClone(turns) };
   }
   private consume(journal: Journal, row: any): void {
@@ -65,6 +77,10 @@ export class RolloutReader {
     if (row.type === 'session_meta') {
       if (p.parent_thread_id || p.parentThreadId || (p.thread_source && p.thread_source !== 'user') || (p.source && typeof p.source === 'object')) throw new Error('Служебная задача');
       journal.identity = p.id; journal.cwd = p.cwd; return;
+    }
+    if (!journal.name && row.type === 'response_item' && p.type === 'message' && p.role === 'user') {
+      const text = Array.isArray(p.content) ? p.content.filter((item: any) => item?.type === 'input_text').map((item: any) => item.text).join('\n') : p.content;
+      journal.name = taskName(text);
     }
     if (row.type !== 'event_msg' || (p.thread_id !== undefined && p.thread_id !== journal.identity)) return;
     const timestamp = Date.parse(row.timestamp) / 1000;
