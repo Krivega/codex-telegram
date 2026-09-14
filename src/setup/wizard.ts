@@ -5,6 +5,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { defaults, loadConfig, saveConfig } from '../config/config.ts';
 import type { Config } from '../config/config.ts';
 import { configureTelegram } from './telegram.ts';
+import { configureCodexExecutable } from './codex.ts';
 import { acquireLock } from '../storage/lock.ts';
 
 export async function setup(directory: string): Promise<void> {
@@ -25,7 +26,7 @@ export async function setup(directory: string): Promise<void> {
       try { return await ask(''); } finally { hidden = false; process.stdout.write('\n'); }
     }, existing ? { telegram: config.telegram, token: existing.token } : undefined);
     config.telegram = binding.telegram;
-    config.codex.executable = await ask(`Программа Codex [${config.codex.executable}]: `) || config.codex.executable;
+    config.codex.executable = await configureCodexExecutable(ask, config.codex.executable);
     const socket = await ask(`Адрес локального сокета Codex [${config.codex.socketPath}]: `);
     if (socket) config.codex.socketPath = isAbsolute(socket) ? socket : resolve(socket);
     const selected = await ask(`Задачи: all — все основные задачи, либо идентификаторы через запятую [${config.codex.threadIds.join(',') || 'all'}]: `);

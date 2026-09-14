@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { defaults, writePrivateJson } from '../config/config.ts';
 import { acquireLock } from '../storage/lock.ts';
 import { configureTelegram } from '../setup/telegram.ts';
+import { configureCodexExecutable } from '../setup/codex.ts';
 import { HubClient } from './client.ts';
 import { hubDefaults, loadNetworkConfig, saveNetworkConfig, serverUrl } from './config.ts';
 import type { AgentConfig, HubConfig, NetworkConfig } from './config.ts';
@@ -51,7 +52,7 @@ async function configureAgent(directory: string, ask: Ask, hidden: Ask, existing
     await unlink(pendingPath);
     console.log(`Компьютер зарегистрирован: ${string(paired.name, 60)}. Токен Telegram не передавался.`);
   }
-  config.codex.executable = await ask(`Программа Codex [${config.codex.executable}]: `) || config.codex.executable;
+  config.codex.executable = await configureCodexExecutable(ask, config.codex.executable);
   const socket = await ask(`Сокет общего сервера Codex [${config.codex.socketPath}]: `);
   if (socket) config.codex.socketPath = resolve(socket);
   const threads = await ask(`Задачи: all или идентификаторы через запятую [${config.codex.threadIds.join(',') || 'all'}]: `);
