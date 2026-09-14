@@ -4,6 +4,7 @@ import { CodexUnavailableError } from '../types.ts';
 
 type Entry = { path: string; id: string; primary: boolean; service: boolean };
 const MAX_HEADER_BYTES = 32 * 1024 * 1024;
+const DESKTOP_ORIGINATORS = new Set(['Codex Desktop', 'codex_work_desktop']);
 
 export class DesktopCatalog {
   private root: string;
@@ -58,7 +59,7 @@ export class DesktopCatalog {
         const p = row.payload;
         if (row.type !== 'session_meta' || typeof p?.id !== 'string' || !/^[\w-]+$/.test(p.id) || !path.endsWith(`-${p.id}.jsonl`)) return;
         const service = Boolean(p.parent_thread_id || p.parentThreadId || (p.thread_source && p.thread_source !== 'user') || (p.source && typeof p.source === 'object'));
-        return { path, id: p.id, service, primary: !service && p.source === 'vscode' && p.originator === 'Codex Desktop' };
+        return { path, id: p.id, service, primary: !service && p.source === 'vscode' && DESKTOP_ORIGINATORS.has(p.originator) };
       }
     } catch { return; } finally { await handle.close(); }
   }

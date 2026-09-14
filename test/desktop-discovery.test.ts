@@ -62,6 +62,21 @@ test('список Desktop показывает первую строку пол
   assert.ok(!telegram.texts[0]!.text.includes('named'));
 });
 
+test('Desktop наблюдает журналы с актуальным originator и отправляет завершение', async (t) => {
+  const f = await fixture(); t.after(f.cleanup); f.adapter.mailbox.registerDispatcher('dispatcher');
+  const store = new Store(join(f.directory, 'state.sqlite')); t.after(() => store.close());
+  const telegram = new TestTelegram(); const bridge = new Bridge(f.config, f.directory, store, f.adapter, telegram);
+  const completedAt = Date.now() + 2000;
+  await writeFile(f.path('current'), header('current', { originator: 'codex_work_desktop' })
+    + userMessage('Актуальная задача Desktop') + turn('current-turn', 'Завершено', completedAt));
+
+  assert.deepEqual((await f.adapter.listThreads()).map((thread) => thread.id), ['current']);
+  await bridge.synchronize(); await bridge.deliver();
+  assert.equal(telegram.texts.length, 1);
+  assert.match(telegram.texts[0]!.text, /^Ответ готов: Актуальная задача Desktop/);
+  assert.deepEqual(store.route(42, telegram.texts[0]!.id), { threadId: 'current', turnId: 'current-turn' });
+});
+
 test('новое завершение создаёт уведомление и постоянную привязку; старая история не рассылается', async (t) => {
   const f = await fixture(); t.after(f.cleanup); f.adapter.mailbox.registerDispatcher('dispatcher');
   const store = new Store(join(f.directory, 'state.sqlite')); t.after(() => store.close());
